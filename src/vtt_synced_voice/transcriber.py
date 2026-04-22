@@ -87,7 +87,7 @@ def transcribe(
             print("VTTキュー生成中...")
         cues, onset_debug = build_cues_from_segments(
             segments, max_gap_seconds, audio_normalized, SAMPLE_RATE,
-            margin_before, margin_after, silence_threshold,
+            margin_before, margin_after, silence_threshold, language,
         )
         if verbose:
             print(f"  {len(cues)} キュー生成完了")
