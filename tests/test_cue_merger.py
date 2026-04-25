@@ -345,6 +345,90 @@ class TestMergeCuesJapanese:
 
 
 # ---------------------------------------------------------------------------
+# 句点後断片の繰り越しマージ
+# ---------------------------------------------------------------------------
+
+class TestSentenceEndCarry:
+    """句点を内部に含むキューの後半断片が次のキューに繰り越されることを確認。"""
+
+    def test_sha_kai_hoken(self):
+        """「そうですね。社」+「会保険について」→「そうですね。」と「社会保険について」。"""
+        cues = [
+            make_cue(0, 0.0, 1.0, "そうですね。社"),
+            make_cue(1, 1.2, 2.5, "会保険について"),
+        ]
+        result = merge_cues(cues, language="ja", min_cue_chars=0)
+        assert len(result) == 2
+        assert result[0].text == "そうですね。"
+        assert result[1].text == "社会保険について"
+
+    def test_u_ro(self):
+        """「あとウロ」+「と」+「あと外来」+「ウ」+「ロと外来は...」→ 断片が繋がる。"""
+        cues = [
+            make_cue(0, 0.0, 1.0, "あとウロ"),
+            make_cue(1, 1.1, 1.5, "と"),
+            make_cue(2, 1.6, 2.5, "あと外来"),
+            make_cue(3, 2.6, 2.8, "ウ"),
+            make_cue(4, 3.0, 4.5, "ロと外来は外来だったの覚えてます"),
+        ]
+        result = merge_cues(cues, language="ja", min_cue_chars=0)
+        # 「ウ」+「ロ...」が繋がっていることを確認
+        full = "".join(c.text for c in result)
+        assert "ウロ" in full
+
+    def test_no_carry_when_nothing_after_kuten(self):
+        """句点が末尾にある場合は繰り越しなし。"""
+        cues = [
+            make_cue(0, 0.0, 1.0, "完了です。"),
+            make_cue(1, 2.0, 3.0, "次に進みます"),
+        ]
+        result = merge_cues(cues, language="ja", min_cue_chars=0)
+        assert result[0].text == "完了です。"
+        assert result[1].text == "次に進みます"
+
+    def test_half_width_question_mark_carry(self):
+        """半角?の後の断片が次キューに繰り越される。"""
+        cues = [
+            make_cue(0, 0.0, 2.0, "どうですか?そうなんですただそこに就"),
+            make_cue(1, 2.1, 3.5, "職を3月から"),
+        ]
+        result = merge_cues(cues, language="ja", min_cue_chars=0)
+        assert result[0].text == "どうですか?"
+        assert result[1].text == "そうなんですただそこに就職を3月から"
+
+
+# ---------------------------------------------------------------------------
+# 秒数再分割の分割点品質
+# ---------------------------------------------------------------------------
+
+class TestSplitByNaturalBoundary:
+    """_split_by_natural_boundary が単語途中を切断しないことを確認。"""
+
+    def test_no_split_at_verb_inflection(self):
+        """「終わ」の「わ」で切断されないこと（旧終助詞パターンの誤マッチ防止）。"""
+        from vtt_synced_voice.vtt_io import VttCue as _VttCue
+        from vtt_synced_voice.cue_merger import _split_by_natural_boundary
+
+        text = "みんなね、待望式終わったら採血の練習とか、なんかそんな話聞く中はもう卒業まで"
+        sc1 = _VttCue(0, 0.0, 10.0, text[:len(text)//2], 0.0, 10.0)
+        sc2 = _VttCue(1, 10.0, 20.0, text[len(text)//2:], 10.0, 20.0)
+        parts = _split_by_natural_boundary(text, [sc1, sc2], 15.0)
+        # どの分割片も「終わ」で終わらないこと
+        for p in parts:
+            assert not p.text.endswith("終わ"), f"単語途中で分断: {p.text!r}"
+
+    def test_split_at_kuten(self):
+        """句点がある場合は句点で分割される。"""
+        from vtt_synced_voice.vtt_io import VttCue as _VttCue
+        from vtt_synced_voice.cue_merger import _split_by_natural_boundary
+
+        text = "これは最初の文です。これは次の文です。"
+        sc = _VttCue(0, 0.0, 20.0, text, 0.0, 20.0)
+        parts = _split_by_natural_boundary(text, [sc], 10.0)
+        assert any("最初の文です。" in p.text for p in parts)
+
+
+# ---------------------------------------------------------------------------
 # 英語マージ
 # ---------------------------------------------------------------------------
 

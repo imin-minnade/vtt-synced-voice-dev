@@ -25,7 +25,9 @@ _EN_NON_SENTENCE_END_PATTERNS = re.compile(
 )
 
 # 日本語の自然な区切り文字（長キュー分割の候補）
-_JA_SPLIT_CHARS = re.compile(r"[、。！？]|(?<=[よねなわぞぜさか])")
+# 終助詞パターン (?<=[よねなわぞぜさか]) は動詞活用の一部（終わ・なった 等）に
+# 誤マッチして単語の途中を分割点にするため除去。句点・読点のみを候補とする。
+_JA_SPLIT_CHARS = re.compile(r"[、。！？]")
 
 
 def merge_cues(
@@ -72,8 +74,13 @@ def merge_cues(
             if language == "ja" and next_cue is not None and _is_continuation(next_cue.text):
                 pass  # バッファに溜め続ける
             else:
+                # _contains_sentence_end の場合、句点後の断片を次バッファに繰り越す
+                carry: VttCue | None = None
+                if language == "ja" and _contains_sentence_end(cue.text):
+                    cue, carry = _split_cue_at_last_sentence_end(cue)
+                    buffer[-1] = cue
                 merged.append(_flush(buffer, len(merged), join_sep))
-                buffer = []
+                buffer = [carry] if carry is not None else []
 
     if buffer:
         merged.append(_flush(buffer, len(merged), join_sep))
@@ -92,6 +99,52 @@ def merge_cues(
             c.index = i
 
     return merged
+
+
+def _split_cue_at_last_sentence_end(cue: VttCue) -> tuple[VttCue, VttCue | None]:
+    """キュー内の最後の句点位置でテキストを分割し、(句点まで, 句点以降) を返す。
+
+    句点以降が空白のみなら carry=None を返す（繰り越し不要）。
+    タイムスタンプは文字数比率で線形補間する。
+    """
+    text = cue.text
+    # 最後の句点位置を探す（全角。！？ および 半角!? を対象。英語 . は対象外）
+    last_pos = -1
+    for ch in "。！？!?":
+        pos = text.rfind(ch)
+        if pos > last_pos:
+            last_pos = pos
+
+    if last_pos < 0 or last_pos >= len(text) - 1:
+        return cue, None
+
+    before = text[: last_pos + 1]
+    after = text[last_pos + 1 :]
+
+    if not after.strip():
+        return cue, None
+
+    # タイムスタンプを文字数比で補間
+    ratio = (last_pos + 1) / len(text)
+    split_time = cue.start + (cue.end - cue.start) * ratio
+
+    cue_before = VttCue(
+        index=cue.index,
+        start=cue.start,
+        end=split_time,
+        text=before,
+        original_start=cue.original_start,
+        original_end=split_time,
+    )
+    cue_after = VttCue(
+        index=cue.index,
+        start=split_time,
+        end=cue.end,
+        text=after,
+        original_start=split_time,
+        original_end=cue.original_end,
+    )
+    return cue_before, cue_after
 
 
 def _flush(buffer: list[VttCue], index: int, join_sep: str) -> VttCue:
