@@ -398,6 +398,64 @@ class TestSentenceEndCarry:
 
 
 # ---------------------------------------------------------------------------
+# 末尾断片の後処理結合
+# ---------------------------------------------------------------------------
+
+class TestMergeDanglingFragments:
+    """_merge_dangling_fragments による末尾断片の結合を確認。"""
+
+    def test_verb_renyou_merged_to_next(self):
+        """動詞連用形で終わるキューが次キューの先頭に結合される。"""
+        cues = [
+            make_cue(0, 0.0, 1.0, "結構妊娠し"),   # 末尾:し(動詞/自立/連用形)
+            make_cue(1, 1.1, 2.5, "て一人目の早々に"),
+        ]
+        result = merge_cues(cues, language="ja", min_cue_chars=0)
+        assert len(result) == 1
+        assert result[0].text == "結構妊娠して一人目の早々に"
+
+    def test_noun_single_char_merged_to_next(self):
+        """名詞1文字で終わるキューが次キューの先頭に結合される。"""
+        cues = [
+            make_cue(0, 0.0, 1.0, "辛"),            # 末尾:辛(名詞/一般/1文字)
+            make_cue(1, 1.1, 2.5, "かったとかそういう感じ"),
+        ]
+        result = merge_cues(cues, language="ja", min_cue_chars=0)
+        assert len(result) == 1
+        assert result[0].text == "辛かったとかそういう感じ"
+
+    def test_chain_fragments_merged(self):
+        """連鎖する断片（断片→断片→完全な文）がすべて結合される。"""
+        cues = [
+            make_cue(0, 0.0, 0.5, "逆言"),          # 断片
+            make_cue(1, 0.6, 1.0, "え"),             # 動詞連用形 → さらに断片
+            make_cue(2, 1.1, 2.5, "ばなんでしょうね"),
+        ]
+        result = merge_cues(cues, language="ja", min_cue_chars=0)
+        assert len(result) == 1
+        assert result[0].text == "逆言えばなんでしょうね"
+
+    def test_normal_cue_not_merged(self):
+        """文末で終わる正常なキューは結合されない。"""
+        cues = [
+            make_cue(0, 0.0, 1.5, "そうですよね"),
+            make_cue(1, 2.0, 3.5, "次の話題に進みます"),
+        ]
+        result = merge_cues(cues, language="ja", min_cue_chars=0)
+        assert len(result) == 2
+
+    def test_verb_renyou_ta_merged(self):
+        """連用タ接続（やっ・入っ）で終わるキューが次キューに結合される。"""
+        cues = [
+            make_cue(0, 0.0, 1.0, "卒業後に入っ"),  # 末尾:入っ(連用タ接続)
+            make_cue(1, 1.1, 2.5, "たあーそうか"),
+        ]
+        result = merge_cues(cues, language="ja", min_cue_chars=0)
+        assert len(result) == 1
+        assert result[0].text == "卒業後に入ったあーそうか"
+
+
+# ---------------------------------------------------------------------------
 # 秒数再分割の分割点品質
 # ---------------------------------------------------------------------------
 
